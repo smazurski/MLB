@@ -1,6 +1,6 @@
 # MLB Insights
 
-This project analyzes the relationship between Major League Baseball player salaries and performance. The data specifically looks at position player data scraped from sports-reference.com and defines the most correlative features in the dataset.
+This project analyzes the relationship between Major League Baseball salaries and performance. The data specifically looks at position player data scraped from sports-reference.com and defines the most correlative features in the dataset.
 
 
 ### Baseball Performance Metrics
