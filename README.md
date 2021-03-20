@@ -34,4 +34,4 @@ This project analyzes the relationship between Major League Baseball salaries an
 ![alt text](https://github.com/smazurski/MLB/blob/main/Images/WAR_by_Age_Bar.PNG?raw=true) 
 
 
-Age is the strongest predictor of player salary. The longer a player lasts in the league, the more money he makes. Although player performance significantly drops off after age 30, salaries rise dramatically. This probably explains the recent trends in MLB organizations to break down and rebuild their teams for younger, more inexpensive players.  
+Age is the strongest predictor of player salary. The longer a player lasts in the league, the more money he makes. Although player performance significantly drops off after age 30, salaries rise dramatically. This probably explains the recent trends in MLB organizations to break down and rebuild their teams for younger, less expensive players.  
