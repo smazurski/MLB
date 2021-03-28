@@ -1,0 +1,608 @@
+---
+title: "MLB Player Performance and Salary"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+***
+
+|     This report analyzes the relationship between Major League Baseball hitting performance 
+|     and salary. The data was scrubed from various sports statistics websites, most notably 
+|     sports-reference.com and ESPN. The analysis seeks to create visualizations that display 
+|     clear insights within the dataset, as well as build an effective machine learning model
+|     to predict a player's salary.  The data uses statistics from the 2016 to 2019 seasons.
+
+<br>
+
+<h2>Visualizations and Insights</h2>
+
+***
+
+```{r mlb1, include=FALSE}
+
+library(rvest)
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(plotly)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(DMwR)
+library(hrbrthemes)
+library(patchwork)
+library(scales)
+library(flextable)
+library(extrafont)
+library(knitr)
+
+urlfile<-'https://raw.githubusercontent.com/smazurski/MLB/master/MLB_Batters.csv'
+
+# Salaries of all hitters from 2016-2019 seasons with over 100 Plate Appearances (opportunities)
+hitters <- read_csv(urlfile)
+
+# Take a peek at the data
+glimpse(hitters)
+
+
+
+```
+
+
+```{r mlb2, include=FALSE}
+
+#######            #######
+    #Regression Model
+#######            #######
+
+# Convert data types
+hitters$Acquired <- as.factor(hitters$Acquired)
+hitters$POS <- as.factor(hitters$POS)
+hitters$Lg <- as.factor(hitters$Lg)
+
+summary(hitters)
+```
+
+
+```{r mlb3, include=FALSE}
+
+# Filter out Name, Team and salaries=0
+hitters_model_data <- hitters %>%
+  select(-Rk, -Name, -Tm) %>%
+  filter(Salary > 0)
+
+# Create Model
+hitters_model <- lm(hitters_model_data$Salary~., data = hitters_model_data)
+summary(hitters_model) # R2=.4997, F-stat: 45.25 
+
+```
+
+
+```{r mlb4, include=FALSE}
+
+# Correlated Features
+library(corrplot)
+
+hitters_model_data %>%
+  keep(is.numeric) %>%
+  cor() %>%
+  corrplot()
+
+
+#<br>
+#<br>
+#<br>
+#<h4><li>There are definitely some mutlicollinear features.</li></h4>
+#<h4><li>There are many features correlated with Salary.</li></h4>
+#<h4><li>Which features are the most important?</li></h4>
+#<br>
+#<br>
+
+
+```
+
+<h4>Importance By Feature</h4>
+
+```{r mlb5, echo=FALSE}
+
+# Variable Importance
+imp <- varImp(hitters_model, scale=FALSE)
+imp <- imp %>%
+  arrange(desc(Overall))
+
+
+ggplot2::ggplot(imp, aes(x=reorder(rownames(imp),Overall), y=Overall)) +
+geom_point( color="blue", size=4, alpha=0.6)+
+geom_segment( aes(x=rownames(imp), xend=rownames(imp), y=0, yend=Overall), 
+color='skyblue') +
+xlab('Variable')+
+ylab('Overall Importance')+
+theme_light() +
+coord_flip() 
+
+```
+
+<h5>Insights:</h5>
+<h6><li>National League, SLG, OBP and OPS are surprisingly the lowest predictors of salary.</li></h6>
+<h6><li>Age, Games Played, and Intentional Walks are the highest.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+```{r mlb6, include=FALSE}
+
+hitters_model_data <- hitters_model_data %>%
+  select(-OPS, -OBP, -SLG, -R, -Yr, -RBI, -H, -BA, -`OPS+`)
+
+
+hitters_model <- lm(hitters_model_data$Salary~., data = hitters_model_data)
+summary(hitters_model)
+
+
+#R2=.4992, F-stat: 56.19, decent improvement with the F-statistic. 
+
+
+```
+
+
+
+```{r mlb7, include=FALSE}
+imp <- varImp(hitters_model, scale=FALSE)
+
+imp <- imp %>%
+  arrange(desc(Overall))
+
+ggplot2::ggplot(imp, aes(x=reorder(rownames(imp),Overall), y=Overall)) +
+geom_point( color="blue", size=4, alpha=0.6)+
+geom_segment( aes(x=rownames(imp), xend=rownames(imp), y=0, yend=Overall), 
+color='skyblue') +
+xlab('Variable')+
+ylab('Overall Importance')+
+theme_light() +
+coord_flip()
+```
+
+
+```{r mlb8, include=FALSE}
+
+# Remove additional fields
+hitters_model_data <- hitters_model_data %>%
+  select(-TB, -Lg, -HR)
+
+
+hitters_model <- lm(hitters_model_data$Salary~., data = hitters_model_data)
+summary(hitters_model)
+
+#<h3>Insights:</h3>
+#<h4><li>R2=.4997, F-stat: 64.21</li></h4>
+#<h4><li>Our model only accounts for ~50% of the variance in salary.</li></h4>
+#<br>
+
+
+```
+
+
+<h4>Position Group Salaries and Performance</h4>
+
+```{r mlb9, echo=FALSE}
+
+#cor(hitters_model_data$WAR,hitters_model_data$Salary) 
+# Wins Above Replacement is not very correlative with Salary
+
+options(dplyr.summarise.inform = FALSE)
+
+hitters_by_position <- hitters_model_data %>%
+  group_by(POS) %>%
+  summarise(Players=n(), 
+            Average_WAR=round(mean(WAR),2),
+            Average_Age=round(mean(Age),2), 
+            Average_Salary=round(mean(Salary),2), 
+            Median_Salary=round(median(Salary),2))
+
+kable(hitters_by_position)
+
+```
+
+<h5>Insights:</h5>
+<h6><li>Third Basemen have the highest Wins-Above-Replacement and Average Salaries.</li></h6>
+<h6><li>Catchers are the oldest average age group.</li></h6>
+<h6><li>Utility players (players who play multiple positions, IF and OF) are the largest player group.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Median Salary and OPS by Age</h4>
+```{r mlb10, echo=FALSE}
+
+options(dplyr.summarise.inform = FALSE)
+
+hitters_table <- hitters %>%
+  group_by(Age) %>%
+  summarise(players=n(), 
+            AvgWAR=mean(WAR), 
+            MedWar=median(WAR), 
+            AvgSal=mean(Salary), 
+            medSal=median(Salary),
+            MedOPS=median(OPS),
+            AvgOPS=mean(OPS))
+
+
+
+
+p1 <- ggplot(hitters_table, aes(x=Age, y=medSal)) +
+  geom_bar(color = "darkblue",  stat = "identity") +
+  theme_ipsum() +
+  scale_y_continuous(labels = comma, name = "Median Salary")
+
+
+
+p2 <- ggplot(hitters_table, aes(x=Age, y=MedOPS)) +
+  geom_bar(color = "darkblue",  stat = "identity") +
+  theme_ipsum()
+
+
+p1+p2
+
+
+
+```
+
+
+<h5>Insights:</h5>
+<h6><li>If you're still playing baseball after age 27, you are very rich.</li></h6>
+<h6><li>There is a clear drop-off in hitting performance as players get older.</li></h6>
+<h6><li>Players aged 19-21 who make the league are highly productive hitters, but underpaid.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Average MLB Age</h4>
+
+```{r mlb11, echo=FALSE}
+
+options(dplyr.summarise.inform = FALSE)
+
+position_table <- hitters_model_data %>%
+  group_by(Age, POS) %>%
+  summarise(players=n(), AvgWAR=mean(WAR), MedWar=median(WAR), AvgSal=mean(Salary), medSal=median(Salary))
+
+
+ggplot(hitters_table, aes(x=Age, y=players)) +
+  geom_bar(stat = "identity", color = "darkblue", fill = "darkgray", size = 1.5) +
+  theme_ipsum()
+
+#median(hitters_model_data$Age) # Median age is 28
+#mean(hitters_model_data$Age) # Average age is 28.57
+
+
+```
+
+
+<h5>Insights:</h5>
+<h6><li>The average age of a player in the MLB is 28.</li></h6>
+<h6><li>The distribution is skewed towards older players.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>MLB Age Distribution by Position</h4>
+
+```{r mlb12, echo=FALSE}
+
+hitters_age_table <- hitters_model_data %>%
+  group_by(Age, POS) %>%
+  summarise(players=n(), AvgWAR=mean(WAR), MedWar=median(WAR), AvgSal=mean(Salary), medSal=median(Salary))
+
+
+# Age Distributions by Position
+#ggplot(hitters_age_table, aes(x=Age, y=players, group = POS)) +
+#  geom_bar(stat = "identity", color = "darkblue", fill = "darkgray", size = 1.5) +
+#  theme_ipsum() +
+#  facet_wrap(~POS)
+
+
+ggplot(hitters_model_data, aes(x=Age, fill=POS)) + 
+  geom_density(alpha=0.8, color = 'Black' ) +
+  theme_ipsum() +
+  facet_wrap(~POS)
+
+```
+
+<h5>Insights:</h5>
+<h6><li>Middle Infielders are the youngest position group.</li></h6>
+<h6><li>Catchers are the oldest position group.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Average WAR By Position and Age</h4>
+
+```{r mlb13, echo=FALSE}
+
+ggplot(position_table, aes(x=Age, y=AvgWAR)) +
+  geom_area(size = 1, color="black", fill="darkblue") +
+  xlab("Age") +
+  ylab("Average WAR") +
+  theme_ipsum() +
+  facet_wrap(~POS)
+
+```
+
+
+<h5>Insights:</h5>
+<h6><li>First Basemen have the shortest careers.</li></h6>
+<h6><li>Young Outfielders are highly valuable players.</li></h6>
+<h6><li>WAR generally drops off as players get older.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Median Salary By Acquisition Type</h4>
+
+```{r mlb14, echo=FALSE}
+
+options(dplyr.summarise.inform = FALSE)
+
+# View By Acquisition Type
+acquired_table <- hitters_model_data %>%
+  group_by(Acquired) %>%
+  summarise(players=n(), AvgWAR=mean(WAR), MedWar=median(WAR), AvgSal=mean(Salary), medSal=median(Salary)) %>%
+  arrange(desc(medSal))
+
+acquired_table %>%
+  arrange(desc(medSal)) %>%
+  ggplot() +
+  geom_bar(aes(reorder(Acquired, medSal), medSal), stat="identity", color = "darkblue", fill = "darkgray", size=1) +
+  scale_y_continuous(labels = comma, name = "Median Salary") +
+  theme_ipsum() +
+  coord_flip() +
+  xlab("Acquisition Type")
+
+
+```
+
+
+<h5>Insights:</h5>
+<h6><li>Players acquired through free agency are paid the highest.</li></h6>
+<h6><li>Amateur players who initially make the league are paid the least.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>MLB Salary Decision Tree</h4>
+
+
+```{r mlb15, echo=FALSE}
+
+#######            #######
+    # Decision Tree #
+#######            #######
+
+tree_mod <-
+  rpart(
+    Salary ~ .,
+    method = "anova",
+    data = hitters_model_data,
+    control=rpart.control(maxdepth = 3)
+  )
+
+
+# Plot decision tree
+rpart.plot(tree_mod, type = 4, extra = 101,  digits = -3)
+
+```
+
+<h5>Insights:</h5>
+<h6><li>The node with the highest entropy is Age < 30, which tells me that players older than 30 are expensive.</li></h6>
+<h6><li>The next highest nodes are AB's and Intentional Walks. This tells me that players who have more batting opportunities are paid more.</li></h6>
+<h6><li>Players who are Intentionally Walked more often are usually dangerous hitters for opposing teams, which equates to a larger salary.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Performance By Acquisition Type Table</h4>
+
+
+```{r mlb16, echo=FALSE}
+options(dplyr.summarise.inform = FALSE)
+
+free_agents <- hitters_model_data %>%
+  group_by(Acquired) %>%
+  summarise(Players=n(),
+            Average_Age=mean(Age), 
+            Average_Salary=mean(Salary), 
+            Median_Salary=median(Salary), 
+            Average_WAR=mean(WAR), 
+            Plate_Appearances=mean(PA))
+
+kable(free_agents)
+
+```
+<h5>Insights:</h5>
+<h6><li>The average free agent is 31.8 years old, has a .818 WAR, and makes $4 million.</li></h6>
+<h6><li>Amateur players are the youngest, cheapest, and most valuable hitters.</li></h6>
+<h6><li>Most players are either drafted, picked up as free agents, or traded.</li></h6>
+
+<br>
+<br>
+<br>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Average Salary Per Team</h4>
+
+
+```{r mlb17, echo=FALSE}
+
+options(dplyr.summarise.inform = FALSE)
+
+## Does not include Pitchers ##
+hitters_2019 <- hitters %>%
+   filter(Yr=='2019')
+
+
+teams_2019 <- hitters_2019 %>%
+   group_by(Team=Tm) %>%
+   summarise(TotalHittersSalary=sum(Salary),
+             AvgSalary=mean(Salary),
+             MedianSalary=median(Salary),
+             AvgAge=median(Age),
+             Players=n()) %>% 
+  arrange(desc(AvgSalary))
+
+
+team_salary <- teams_2019 %>%
+   arrange(desc(AvgSalary)) %>%
+   ggplot() +
+   geom_bar(aes(reorder(Team, AvgSalary), AvgSalary), stat="identity", color = "darkblue", fill = "darkgray", size=1) +
+   scale_y_continuous(labels = comma, name = "Average Salary") +
+   theme_ipsum() +
+   coord_flip() +
+   xlab("Team")
+
+team_salary
+
+
+#team_age <- teams_2019 %>%
+#   arrange(desc(AvgSalary)) %>%
+#   ggplot() +
+#   geom_bar(aes(reorder(Team, AvgSalary), AvgAge), stat="identity", color = "darkblue", fill = "darkgray", size=1) +
+#   scale_y_continuous(labels = comma, name = "Average Age") +
+#   theme_ipsum() +
+#   xlab("Team")
+#team_age
+
+```
+<h5>Insights:</h5>
+<h6><li>The Los Angeles Angels have the highest average salary for position players.</li></h6>
+<h6><li>The top 4 highest paying teams are west of the Mississippi River.</li></h6>
+
+\newpage
+
+<br>
+<br>
+
+<h4>Average Salary By Team</h4>
+
+
+```{r mlb18, echo=FALSE}
+options(dplyr.summarise.inform = FALSE)
+
+ggplot(teams_2019, aes(x=AvgSalary, y=AvgAge, color=Team)) + 
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum() +
+  ggtitle(print(paste("Team Age vs. Salary Correlation: ", round(cor(teams_2019$AvgSalary, teams_2019$AvgAge),2))))
+
+```
+
+<h5>Insights:</h5>
+<h6><li>The positive correlation of .56 tells me that the teams with the highest average salaries are also older.</li></h6>
+
+<br>
+<br>
+
+
+<!-- ```{r mlb17} -->
+
+
+
+<!-- plot_ly(hitters_2019, x = ~WAR, y = ~OPS, type = 'scatter', mode = 'markers', size = ~Salary, color = ~POS, colors = 'Paired', -->
+<!--         sizes = c(5, 50), -->
+<!--         marker = list(opacity = 0.5, sizemode = 'diameter'), -->
+<!--         text = ~paste('Name:', Name, '<br>Age:', Age, '<br>Salary:', Salary)) -->
+
+
+<!-- ``` -->
+
+
+
+
+<!-- ```{r mlb18} -->
+
+<!-- plot_ly(hitters_2019, x = ~WAR, y = ~OPS, type = 'scatter', mode = 'markers', size = ~Salary, color = ~Tm, colors = 'Paired', -->
+<!--         sizes = c(5, 50), -->
+<!--         marker = list(opacity = 0.5, sizemode = 'diameter'), -->
+<!--         text = ~paste('Name:', Name, '<br>Age:', Age, '<br>Salary:', Salary)) -->
+
+
+
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r pressure, echo=FALSE} -->
+
+<!-- plot_ly(hitters_2019, x = ~WAR, y = ~OPS, type = 'scatter', mode = 'markers', size = ~Salary, color = ~Acquired, colors = 'Paired', -->
+<!--         sizes = c(5, 50), -->
+<!--         marker = list(opacity = 0.5, sizemode = 'diameter'), -->
+<!--         text = ~paste('Name:', Name, '<br>Age:', Age, '<br>Salary:', Salary)) -->
+
+
+
+
+<!-- ``` -->
+
+
+
+
+
+
